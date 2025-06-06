@@ -1,0 +1,13 @@
+/.vscode
+.history
+.pytest_cache
+*__pycache__
+trained_model/
+test_model/
+figs/
+logs/
+runs/
+new_logs/
+*.job
+
+nohup*
