@@ -230,8 +230,7 @@ class FrankaEnv(MujocoRobotEnv):
 
     def _is_success(self, achieved_goal, desired_goal) -> np.float32:
         d = self.goal_distance(achieved_goal, desired_goal)
-        # return (d < self.distance_threshold).astype(np.float32)
-        return (d < self.distance_threshold)
+        return (d < self.distance_threshold).astype(np.float32)
 
     def _render_callback(self) -> None:
         # visualize goal site
