@@ -10,4 +10,4 @@ runs/
 new_logs/
 *.job
 
-nohup*
+**/__pycache__/

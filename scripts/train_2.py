@@ -38,8 +38,17 @@ def train(args):
     env = VecMonitor(env, filename=os.path.join(run_dir, "monitor.csv"))
     env = VecNormalize(env, norm_obs=True, norm_reward=True, training=True)
 
+    policy_kwargs = dict(
+        activation_fn=torch.nn.ReLU,  # 激活函数
+        net_arch=dict(
+            pi=[256, 256],  # Actor (policy) network
+            vf=[256, 256]   # Critic (value) network
+        )
+    )
+
     model = PPO("MultiInputPolicy", 
                 env, 
+                policy_kwargs=policy_kwargs,
                 verbose=1, 
                 device=device,
                 tensorboard_log=run_dir,
@@ -66,68 +75,71 @@ def train(args):
     eval_env = VecNormalize(eval_env, norm_obs=True, norm_reward=True, training=False)
 
     # 回调函数
+    class MutableLRSchedule:
+        """
+        一个可变的学习率调度器，其值可以被外部（如回调函数）修改。
+        它本身是一个可调用对象，可以作为 learning_rate 参数传入模型。
+        """
+        def __init__(self, initial_value: float):
+            self.current_value = initial_value
+
+        def __call__(self, progress_remaining: float) -> float:
+            # PPO 会调用这个方法，我们只需返回当前的值
+            # 注意：这里的 progress_remaining 我们没有使用，因为值的更新由回调控制
+            return self.current_value
+
+        def set_value(self, new_value: float):
+            """提供一个方法给回调函数来修改学习率"""
+            self.current_value = new_value
+
     class ReduceLROnPlateauCallback(BaseCallback):
         """
         当评估奖励停滞时，降低学习率。
-        必须与 EvalCallback 一起使用。
-        
-        :param patience: (int) 连续多少次评估性能没有提升后降低学习率。
-        :param factor: (float) 学习率衰减因子。
-        :param min_lr: (float) 学习率的下限。
+        这个版本与 MutableLRSchedule 配合使用。
         """
-        def __init__(self, patience: int, factor: float = 0.5, min_lr: float = 1e-6, verbose: int = 0):
-            super(ReduceLROnPlateauCallback, self).__init__(verbose)
+        def __init__(self, lr_scheduler: MutableLRSchedule, patience: int, factor: float = 0.5, min_lr: float = 1e-6, verbose: int = 0):
+            super().__init__(verbose)
+            self.lr_scheduler = lr_scheduler # 存储调度器实例
             self.patience = patience
             self.factor = factor
             self.min_lr = min_lr
-            self.patience_counter = 0 # 耐心计数器
-            # EvalCallback 会更新 self.parent.best_model_save_path
-            # 我们可以通过检查它是否被更新来判断模型是否有提升
+            self.patience_counter = 0
             self.last_best_path = ""
 
         def _on_step(self) -> bool:
-            # 此回调的逻辑在 EvalCallback 之后运行
-            # EvalCallback 有一个 'parent' 属性指向它自己
-            assert self.parent is not None, "ReduceLROnPlateauCallback 必须作为 EvalCallback 的 callback 参数使用"
+            assert self.parent is not None, "此回调必须与 EvalCallback 一起使用"
 
-            # 检查模型是否有提升 (EvalCallback 会在找到更好的模型时更新路径)
             if self.parent.best_model_save_path != self.last_best_path:
-                # 模型有提升，重置耐心计数器
                 self.patience_counter = 0
                 self.last_best_path = self.parent.best_model_save_path
-                if self.verbose > 0:
-                    print("检测到模型性能提升，重置学习率衰减耐心。")
             else:
-                # 模型没有提升，增加耐心计数器
                 self.patience_counter += 1
 
             if self.patience_counter >= self.patience:
-                current_lr = self.model.policy.optimizer.param_groups[0]['lr']
+                current_lr = self.lr_scheduler.current_value
                 new_lr = max(current_lr * self.factor, self.min_lr)
                 
                 if current_lr > new_lr:
-                    self.model.policy.optimizer.param_groups[0]['lr'] = new_lr
+                    # 直接修改调度器的值！
+                    self.lr_scheduler.set_value(new_lr)
                     if self.verbose > 0:
-                        print(f"评估奖励停滞 {self.patience} 次，学习率从 {current_lr:.6f} 衰减至 {new_lr:.6f}")
-                    # 重置计数器，避免连续衰减
+                        print(f"UP TO {self.patience}! LR form {current_lr:.7f} to {new_lr:.7f}")
                     self.patience_counter = 0
             
             return True
-
-    reduce_lr_callback = ReduceLROnPlateauCallback(patience=3, factor=0.5, verbose=1)
+        
+    lr_schedule = MutableLRSchedule(initial_value=args.lr)
+    reduce_lr_callback = ReduceLROnPlateauCallback(lr_scheduler=lr_schedule, patience=5, factor=0.5, verbose=1)
 
     eval_callback = EvalCallback(
         eval_env,
         best_model_save_path=os.path.join(run_dir, "best_model"),
         log_path=os.path.join(run_dir, "eval_logs"),
-        eval_freq=max(10000 // args.num_envs, 1),  # 每10000步评估一次
+        eval_freq=max(100000 // args.num_envs, 1),  # 每10000步评估一次
         n_eval_episodes=10,
         deterministic=True,
         render=False,
-        # verbose=1,
 
-        # 将学习率衰减回调作为 EvalCallback 的一部分
-        callback_on_new_best=None, # 我们用自己的逻辑
         callback_after_eval=reduce_lr_callback # 在每次评估后运行我们的回调
     )
 
