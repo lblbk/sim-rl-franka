@@ -22,141 +22,147 @@ import argparse
 def get_formatted_time(format="%Y-%m-%d-%H-%M-%S"):
     return datetime.now().strftime(format)
 
-parser = argparse.ArgumentParser()
-parser.add_argument("--exp_name", default="Franka_TQC_DP", type=str, help="exp name")
-parser.add_argument("--num_envs", default=64, type=int, help="number of gym envs")
-parser.add_argument("--num_eval_envs", default=1, type=int, help="number of gym eval envs")
-parser.add_argument("--env_id", default="FrankaPickAndPlaceSparse-v0", type=str, help="env id")
 
-parser.add_argument("--run_dir", default="runs", type=str, help="this epoch runs dir name for save logs")
-args = parser.parse_args()
+def main(args):
+    run_dir = f"{args.run_dir}/{args.exp_name}-{get_formatted_time()}"
+    os.makedirs(run_dir, exist_ok=True)
 
-run_dir = f"{args.run_dir}/{args.exp_name}-{get_formatted_time()}"
-os.makedirs(run_dir, exist_ok=True)
+    # 自定义包装器
+    class TerminateOnTruncatedWrapper(gym.Wrapper):
+        def step(self, action):
+            obs, reward, terminated, truncated, info = self.env.step(action)
+            if truncated:
+                terminated = True
+            return obs, reward, terminated, truncated, info
 
-# 自定义包装器
-class TerminateOnTruncatedWrapper(gym.Wrapper):
-    def step(self, action):
-        obs, reward, terminated, truncated, info = self.env.step(action)
-        if truncated:
-            terminated = True
-        return obs, reward, terminated, truncated, info
+    env = DummyVecEnv([lambda: TerminateOnTruncatedWrapper(gym.make(args.env_id, reward_type=args.reward_type))])
 
-# 注册环境
-if "FrankaPickAndPlaceSparse-v0" not in gym.envs.registry:
-    gym.register(
-        id="FrankaPickAndPlaceSparse-v0",
-        entry_point="panda_mujoco_gym.envs.pick_and_place:FrankaPickAndPlaceEnv",
-        max_episode_steps=1000000,
+    # 初始化 wandb
+    # run = wandb.init(
+    #     entity="***",
+    #     project="***",
+    #     config={
+    #         "policy": "MultiInputPolicy",
+    #         "learning_rate": 0.001,
+    #         "buffer_size": 1_000_000,
+    #         "batch_size": 512,
+    #         "learning_starts": 2000,
+    #         "policy_kwargs": {"net_arch": [256, 256, 256], "n_critics": 2},
+    #         "replay_buffer_class": "HerReplayBuffer",
+    #         "replay_buffer_kwargs": {"n_sampled_goal": 4, "goal_selection_strategy": "future"},
+    #         "tau": 0.05,
+    #         "gamma": 0.95,
+    #         "verbose": 1,
+    #         "top_quantiles_to_drop_per_net": 2
+    #     }
+    # )
+
+    swanlab_callback = SwanLabCallback(
+        project=args.exp_name,
+
+        config={
+            "policy": "MultiInputPolicy",
+            "learning_rate": args.lr,
+            "buffer_size": 1_000_000,
+            "batch_size": args.batch_size,
+            "learning_starts": 2000,
+            "policy_kwargs": {"net_arch": [256, 256, 256], "n_critics": 2},
+            "replay_buffer_class": "HerReplayBuffer",
+            "replay_buffer_kwargs": {"n_sampled_goal": 4, "goal_selection_strategy": "future"},
+            "tau": 0.05,
+            "gamma": 0.95,
+            "verbose": 1,
+            "top_quantiles_to_drop_per_net": 2
+        }
     )
 
-reward_type = "sparse"
-env = DummyVecEnv([lambda: TerminateOnTruncatedWrapper(gym.make("FrankaPickAndPlaceSparse-v0", reward_type=reward_type))])
-
-# 初始化 wandb
-# run = wandb.init(
-#     entity="***",
-#     project="***",
-#     config={
-#         "policy": "MultiInputPolicy",
-#         "learning_rate": 0.001,
-#         "buffer_size": 1_000_000,
-#         "batch_size": 512,
-#         "learning_starts": 2000,
-#         "policy_kwargs": {"net_arch": [256, 256, 256], "n_critics": 2},
-#         "replay_buffer_class": "HerReplayBuffer",
-#         "replay_buffer_kwargs": {"n_sampled_goal": 4, "goal_selection_strategy": "future"},
-#         "tau": 0.05,
-#         "gamma": 0.95,
-#         "verbose": 1,
-#         "top_quantiles_to_drop_per_net": 2
-#     }
-# )
-
-swanlab_callback = SwanLabCallback(
-    project=args.exp_name,
-
-    config={
-        "policy": "MultiInputPolicy",
-        "learning_rate": 0.001,
-        "buffer_size": 1_000_000,
-        "batch_size": 512,
-        "learning_starts": 2000,
-        "policy_kwargs": {"net_arch": [256, 256, 256], "n_critics": 2},
-        "replay_buffer_class": "HerReplayBuffer",
-        "replay_buffer_kwargs": {"n_sampled_goal": 4, "goal_selection_strategy": "future"},
-        "tau": 0.05,
-        "gamma": 0.95,
-        "verbose": 1,
-        "top_quantiles_to_drop_per_net": 2
-    }
-)
-
-model = TQC(
-    policy="MultiInputPolicy",
-    env=env,
-    learning_rate=0.001,
-    buffer_size=1_000_000,
-    batch_size=512,
-    learning_starts=2000,
-    policy_kwargs=dict(net_arch=[256, 256, 256], n_critics=2),
-    replay_buffer_class=HerReplayBuffer,
-    replay_buffer_kwargs=dict(n_sampled_goal=4, goal_selection_strategy="future"),
-    tau=0.05,
-    gamma=0.95,
-    verbose=1,
-    top_quantiles_to_drop_per_net=2
-)
+    model = TQC(
+        policy="MultiInputPolicy",
+        env=env,
+        learning_rate=args.lr,
+        buffer_size=1_000_000,
+        batch_size=args.batch_size,
+        learning_starts=2000,
+        policy_kwargs=dict(net_arch=[256, 256, 256], n_critics=2),
+        replay_buffer_class=HerReplayBuffer,
+        replay_buffer_kwargs=dict(n_sampled_goal=4, goal_selection_strategy="future"),
+        tau=0.05,
+        gamma=0.95,
+        verbose=1,
+        top_quantiles_to_drop_per_net=2
+    )
 
 
-class CustomEvalCallback(EvalCallback):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.success_rates = []
+    class CustomEvalCallback(EvalCallback):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            self.success_rates = []
 
-    def _on_step(self) -> bool:
-        result = super()._on_step()
+        def _on_step(self) -> bool:
+            result = super()._on_step()
 
-        # 添加空列表保护
-        if len(self.evaluations_results) == 0:
+            # 添加空列表保护
+            if len(self.evaluations_results) == 0:
+                return result
+
+            # 仅在评估完成后记录
+            if self.eval_freq > 0 and self.n_calls % self.eval_freq == 0:
+                successes = []
+                for episode_data in self.evaluations_results[-1]:
+                    _, episode_infos = episode_data
+                    if len(episode_infos) > 0:
+                        success = episode_infos[-1].get('is_success', False)
+                        successes.append(success)
+
+                if len(successes) > 0:
+                    success_rate = np.mean(successes)
+                    swanlab.log({
+                        "eval/success_rate": success_rate,
+                        "global_step": self.num_timesteps
+                    })
+
             return result
 
-        # 仅在评估完成后记录
-        if self.eval_freq > 0 and self.n_calls % self.eval_freq == 0:
-            successes = []
-            for episode_data in self.evaluations_results[-1]:
-                _, episode_infos = episode_data
-                if len(episode_infos) > 0:
-                    success = episode_infos[-1].get('is_success', False)
-                    successes.append(success)
+    eval_env = DummyVecEnv([lambda: Monitor(TerminateOnTruncatedWrapper(gym.make(args.env_id, reward_type=args.reward_type)), 
+                                            os.path.join(run_dir, "eval_logs"))])
+    eval_callback = CustomEvalCallback(
+        eval_env,
+        best_model_save_path=os.path.join(run_dir, "best_model"),
+        eval_freq=2000,
+        n_eval_episodes=args.n_eval_episodes,
+        deterministic=True,
+        render=False,
+    )
 
-            if len(successes) > 0:
-                success_rate = np.mean(successes)
-                swanlab.log({
-                    "eval/success_rate": success_rate,
-                    "global_step": self.num_timesteps
-                })
+    model.learn(
+        total_timesteps=args.total_timesteps,
+        callback=[eval_callback, swanlab_callback],
+        tb_log_name="tqc_franka_push"
+    )
 
-        return result
+    model.save(os.path.join(run_dir, "tqc_franka_push_final"))
+    # run.finish()
 
-eval_env = DummyVecEnv([lambda: Monitor(TerminateOnTruncatedWrapper(gym.make("FrankaPickAndPlaceSparse-v0", reward_type=reward_type)), 
-                                        os.path.join(run_dir, "eval_logs"))])
-eval_callback = CustomEvalCallback(
-    eval_env,
-    # best_model_save_path="./best_model/",
-    best_model_save_path=os.path.join(run_dir, "best_model"),
-    eval_freq=2000,
-    n_eval_episodes=15,
-    deterministic=True,
-    render=False,
-)
+def parse_args():
+    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--exp_name", default="Franka_TQC_DP", type=str, help="exp name")
+    parser.add_argument("--env_id", default="FrankaPickAndPlaceSparse-v0", type=str, help="env id")
+    parser.add_argument("--reward_type", default="sparse", type=str, help="reward type, can be 'dense' or 'sparse'")
 
-model.learn(
-    total_timesteps=500_000,
-    callback=[eval_callback, swanlab_callback],
-    tb_log_name="tqc_franka_push"
-)
+    parser.add_argument("--batch_size", default=512, type=int, help="batch size")
+    parser.add_argument("--lr", default=0.001, type=float, help="learning rate")
+    parser.add_argument("--total_timesteps", default=500_000, type=int, help="total_timesteps")
 
-model.save(os.path.join(run_dir, "tqc_franka_push_final"))
-# model.save("tqc_franka_push_final")
-# run.finish()
+    parser.add_argument("--n_eval_episodes", default=15, type=int, help="n_eval_episodes")
+
+    parser.add_argument("--run_dir", default="runs", type=str, help="this epoch runs dir name for save logs")
+    args = parser.parse_args()
+    return args
+
+if __name__ == "__main__":
+    '''
+    nohup python train_dp.py > nuhup.out 2>&1 & 
+    '''
+    args = parse_args()
+    main(args)
