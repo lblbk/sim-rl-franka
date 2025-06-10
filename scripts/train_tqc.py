@@ -19,6 +19,8 @@ print(panda_mujoco_gym.__file__)
 from datetime import datetime
 import argparse
 
+import torch
+
 def get_formatted_time(format="%Y-%m-%d-%H-%M-%S"):
     return datetime.now().strftime(format)
 
@@ -26,6 +28,9 @@ def get_formatted_time(format="%Y-%m-%d-%H-%M-%S"):
 def main(args):
     run_dir = f"{args.run_dir}/{args.exp_name}-{get_formatted_time()}"
     os.makedirs(run_dir, exist_ok=True)
+
+    device = f"cuda:{args.device_id}"
+    torch.cuda.set_device(args.device_id)
 
     # 自定义包装器
     class TerminateOnTruncatedWrapper(gym.Wrapper):
@@ -79,6 +84,7 @@ def main(args):
     model = TQC(
         policy="MultiInputPolicy",
         env=env,
+        device=device,
         learning_rate=args.lr,
         buffer_size=1_000_000,
         batch_size=args.batch_size,
@@ -150,6 +156,7 @@ def parse_args():
     parser.add_argument("--env_id", default="FrankaPickAndPlaceSparse-v0", type=str, help="env id")
     parser.add_argument("--reward_type", default="sparse", type=str, help="reward type, can be 'dense' or 'sparse'")
 
+    parser.add_argument("--device_id", default=1, type=int, help="gpu id")
     parser.add_argument("--batch_size", default=512, type=int, help="batch size")
     parser.add_argument("--lr", default=0.001, type=float, help="learning rate")
     parser.add_argument("--total_timesteps", default=500_000, type=int, help="total_timesteps")
