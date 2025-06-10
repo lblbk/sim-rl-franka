@@ -31,12 +31,11 @@ pip install swanlab
 ```txt
 - panda_mujoco_gym    # env
 - scripts             # train 或者 test 后面表示使用算法
-  - test_0            # ⚠️最简单测试方式
-  - train_tqc         # tqc 训练环境
+  - test_naive        # ⚠️ 最简单测试方式
   - test_tqc          # RGB 环境下渲染查看推理结果
-  - train_0           # ⚠️最简单训练方式
-  - train_1           # ⚠️增加多环境并行训练方式
-  - train_2           # ⚠️增加多网络 多环境
+  - train_naive       # ⚠️ 最简单训练方式
+  - train_dp          # ⚠️ 多环境并行训练方式
+  - train_tqc         # tqc 训练环境
 - test                # 测试代码
 ```
 
