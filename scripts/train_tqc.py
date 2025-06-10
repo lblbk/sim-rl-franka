@@ -143,10 +143,10 @@ def main(args):
     model.learn(
         total_timesteps=args.total_timesteps,
         callback=[eval_callback, swanlab_callback],
-        tb_log_name="tqc_franka_push"
+        tb_log_name="log_"+args.exp_name
     )
 
-    model.save(os.path.join(run_dir, "tqc_franka_push_final"))
+    model.save(os.path.join(run_dir, args.exp_name + "_final"))
     # run.finish()
 
 def parse_args():
@@ -169,7 +169,7 @@ def parse_args():
 
 if __name__ == "__main__":
     '''
-    nohup python train_dp.py > nuhup.out 2>&1 & 
+    nohup python scripts/train_tqc.py > logs/nuhup.out 2>&1 &
     '''
     args = parse_args()
     main(args)
