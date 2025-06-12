@@ -11,3 +11,5 @@ new_logs/
 *.job
 
 **/__pycache__/
+*.egg-info
+tmp/
