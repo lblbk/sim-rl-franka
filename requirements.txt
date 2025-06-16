@@ -5,5 +5,5 @@ stable-baselines3==2.2.1
 opencv-python # 解决 module 'cv2' has no attribute 'ocl' 错误
 opencv-contrib-python
 pytest
-sb3_contrib
 swanlab
+sb3_contrib==2.6.0
